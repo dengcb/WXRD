@@ -117,7 +117,7 @@ const createWindow = () => {
     webPreferences: {
       nodeIntegration: true,
     },
-    icon: isMac ? path.join(__dirname, '../build/app.icns') : path.join(__dirname, '../build/icon.png'),
+    icon: isMac ? (app.isPackaged ? path.join(process.resourcesPath, 'icon.icns') : path.join(__dirname, '../build/app.icns')) : path.join(__dirname, '../build/icon.png'),
   });
 
   mainWindow.loadURL('https://weread.qq.com/');
@@ -144,7 +144,7 @@ const createWindow = () => {
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() => {
   if (isMac) {
-    const iconPath = path.join(__dirname, '../build/app.icns');
+    const iconPath = app.isPackaged ? path.join(process.resourcesPath, 'icon.icns') : path.join(__dirname, '../build/app.icns');
     const img = nativeImage.createFromPath(iconPath);
     app.dock.setIcon(img);
     app.setAboutPanelOptions({
