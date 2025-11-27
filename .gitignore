@@ -6,7 +6,7 @@ out
 tsout
 
 # Distribute
-dist
+build/icons.iconset
 release
 
 # credential
@@ -14,3 +14,4 @@ release
 
 # misc
 .DS_Store
+.trae

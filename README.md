@@ -6,7 +6,7 @@
   <img src="https://img.shields.io/badge/downloaded-9787-brightgreen"/>
 </div>
 
-![screenshot](./asset/app.png)
+![screenshot](./asset/screen.png)
 
 **中文** | [English](./README.en.md)
 

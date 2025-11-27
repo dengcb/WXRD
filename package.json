@@ -14,8 +14,17 @@
   "main": "./tsout/main.js",
   "build": {
     "appId": "com.electron.wx-read",
-    "productName": "wx-read",
-    "copyright": "Copyright © 2022 - ${author}",
+    "productName": "微信阅读",
+    "copyright": "Copyright © 2025 - ${author}",
+    "extraResources": [
+      {
+        "from": "build/mac-resources/zh_CN.lproj",
+        "to": "zh_CN.lproj",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
     "directories": {
       "buildResources": "build",
       "output": "release",
@@ -23,7 +32,8 @@
     },
     "mac": {
       "category": "public.app-category.entertainment",
-      "target": "dmg"
+      "target": "dmg",
+      "icon": "build/app.icns"
     }
   },
   "scripts": {
@@ -31,9 +41,11 @@
     "watch": "tsc -w",
     "lint": "npx eslint src/",
     "start": "npm run build && electron ./tsout/main.js",
+    "gen:icns": "bash -c 'ICON_SRC=asset/app.png; ICONSET=build/icons.iconset; mkdir -p \"$ICONSET\" && sips -z 16 16 \"$ICON_SRC\" --out \"$ICONSET/icon_16x16.png\" && sips -z 32 32 \"$ICON_SRC\" --out \"$ICONSET/icon_16x16@2x.png\" && sips -z 32 32 \"$ICON_SRC\" --out \"$ICONSET/icon_32x32.png\" && sips -z 64 64 \"$ICON_SRC\" --out \"$ICONSET/icon_32x32@2x.png\" && sips -z 128 128 \"$ICON_SRC\" --out \"$ICONSET/icon_128x128.png\" && sips -z 256 256 \"$ICON_SRC\" --out \"$ICONSET/icon_128x128@2x.png\" && sips -z 256 256 \"$ICON_SRC\" --out \"$ICONSET/icon_256x256.png\" && sips -z 512 512 \"$ICON_SRC\" --out \"$ICONSET/icon_256x256@2x.png\" && sips -z 512 512 \"$ICON_SRC\" --out \"$ICONSET/icon_512x512.png\" && sips -z 1024 1024 \"$ICON_SRC\" --out \"$ICONSET/icon_512x512@2x.png\" && iconutil -c icns \"$ICONSET\" -o build/app.icns && cp \"$ICON_SRC\" build/icon.png'",
     "pack-win": "npm run build && npx electron-builder -w --x64",
-    "pack-mac": "npm run build && npx electron-builder -m --x64",
-    "pack-mas": "npm run build && npx electron-builder -m --arm64"
+    "pack-mac": "npm run gen:icns && npm run build && npx electron-builder -m --x64",
+    "pack-mas": "npm run gen:icns && npm run build && npx electron-builder -m --arm64",
+    "pack-mac-arm": "npm run gen:icns && npm run build && npx electron-builder -m --arm64"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^3.6.0",
