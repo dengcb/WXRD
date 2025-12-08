@@ -7,6 +7,7 @@ dotenv.config();
 const isMac = process.platform === 'darwin';
 
 const READER_PATH = '/web/reader/';
+const MENU_READER_WIDE_ID = 'menu-reader-wide';
 const readerCss = `
   .readerTopBar,
   .readerChapterContent {
@@ -28,6 +29,15 @@ async function setReaderWidthForState(win: BrowserWindow) {
     const key = await win.webContents.insertCSS(readerCss);
     readerCssKey = key;
   }
+}
+
+function updateReaderWideMenuEnabled(win: BrowserWindow) {
+  const menu = Menu.getApplicationMenu();
+  if (!menu) return;
+  const item = menu.getMenuItemById(MENU_READER_WIDE_ID);
+  if (!item) return;
+  const url = win.webContents.getURL();
+  item.enabled = url.includes(READER_PATH);
 }
 
 function setCNMenu(mainWindow: BrowserWindow) {
@@ -80,7 +90,7 @@ function setCNMenu(mainWindow: BrowserWindow) {
       { role: 'zoomOut', label: '缩小', accelerator: 'CmdOrCtrl+-' },
       { type: 'separator' },
       isMac ? { role: 'togglefullscreen', label: '切换全屏' } : { label: '切换全屏', accelerator: 'F11', click: () => { const isFull = mainWindow.isFullScreen(); mainWindow.setFullScreen(!isFull); } },
-      { label: '阅读变宽', accelerator: 'CmdOrCtrl+9', click: async () => { readerWide = !readerWide; await setReaderWidthForState(mainWindow); } },
+      { id: MENU_READER_WIDE_ID, label: '阅读变宽', accelerator: 'CmdOrCtrl+9', enabled: false, click: async () => { readerWide = !readerWide; await setReaderWidthForState(mainWindow); } },
       { label: '开发者工具', accelerator: 'Alt+CmdOrCtrl+I', click: () => mainWindow.webContents.toggleDevTools() },
     ],
   });
@@ -125,14 +135,18 @@ const createWindow = () => {
   app.setName('微信阅读');
   setCNMenu(mainWindow);
 
+  updateReaderWideMenuEnabled(mainWindow);
+
   mainWindow.webContents.on('did-finish-load', () => {
     setReaderWidthForState(mainWindow);
+    updateReaderWideMenuEnabled(mainWindow);
   });
 
   mainWindow.webContents.on('did-navigate-in-page', (_e, url) => {
     if (url.includes(READER_PATH)) {
       setReaderWidthForState(mainWindow);
     }
+    updateReaderWideMenuEnabled(mainWindow);
   });
 
   // Open the DevTools.
