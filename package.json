@@ -1,9 +1,9 @@
 {
-  "name": "wx-read",
+  "name": "wxrd",
   "description": "A simple Electron application for Weixin Read",
-  "version": "0.2.3",
-  "author": "Binghuan Zhang <esteponawondering@gmail.com>",
-  "repository": "https://github.com/estepona/wx-read-desktop",
+  "version": "0.2.4",
+  "author": "dengcb <i@dengcb.com>",
+  "repository": "https://github.com/dengcb/WXRD",
   "keywords": [
     "wechat",
     "weixin",
@@ -13,7 +13,7 @@
   ],
   "main": "./tsout/main.js",
   "build": {
-    "appId": "com.electron.wx-read",
+    "appId": "com.dengcb.wxrd",
     "productName": "微信阅读",
     "copyright": "Copyright © 2025 - ${author}",
     "compression": "maximum",
@@ -51,18 +51,21 @@
       "category": "public.app-category.entertainment",
       "target": "dmg",
       "icon": "build/app.icns",
+      "artifactName": "wxrd-${version}-${arch}.${ext}",
       "hardenedRuntime": true,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
-      "notarize": {
-        "teamId": "${env.APPLE_TEAM_ID}"
-      }
+      "notarize": null
+    },
+    "win": {
+      "target": "nsis",
+      "artifactName": "wxrd-setup-${version}.${ext}"
     },
     "publish": [
       {
         "provider": "github",
-        "owner": "estepona",
-        "repo": "wx-read-desktop"
+        "owner": "dengcb",
+        "repo": "WXRD"
       }
     ]
   },
@@ -74,9 +77,13 @@
     "gen:icns": "bash -c 'ICON_SRC=asset/app.png; ICONSET=build/icons.iconset; mkdir -p \"$ICONSET\" && sips -z 16 16 \"$ICON_SRC\" --out \"$ICONSET/icon_16x16.png\" && sips -z 32 32 \"$ICON_SRC\" --out \"$ICONSET/icon_16x16@2x.png\" && sips -z 32 32 \"$ICON_SRC\" --out \"$ICONSET/icon_32x32.png\" && sips -z 64 64 \"$ICON_SRC\" --out \"$ICONSET/icon_32x32@2x.png\" && sips -z 128 128 \"$ICON_SRC\" --out \"$ICONSET/icon_128x128.png\" && sips -z 256 256 \"$ICON_SRC\" --out \"$ICONSET/icon_128x128@2x.png\" && sips -z 256 256 \"$ICON_SRC\" --out \"$ICONSET/icon_256x256.png\" && sips -z 512 512 \"$ICON_SRC\" --out \"$ICONSET/icon_256x256@2x.png\" && sips -z 512 512 \"$ICON_SRC\" --out \"$ICONSET/icon_512x512.png\" && sips -z 1024 1024 \"$ICON_SRC\" --out \"$ICONSET/icon_512x512@2x.png\" && iconutil -c icns \"$ICONSET\" -o build/app.icns && cp \"$ICON_SRC\" build/icon.png'",
     "pack-win": "npm run build && npx electron-builder -w --x64",
     "pack-mac": "npm run gen:icns && npm run build && npx electron-builder -m --x64",
-    "pack-mas": "npm run gen:icns && npm run build && npx electron-builder -m --arm64",
     "pack-mac-arm": "npm run gen:icns && npm run build && npx electron-builder -m --arm64",
-    "pack-mac-arm-signed": "npm run gen:icns && npm run build && npx electron-builder -m --arm64 -p always"
+    "pack-mac-x64-signed": "npm run gen:icns && npm run build && npx electron-builder -m --x64 --publish never",
+    "pack-mac-arm-signed": "npm run gen:icns && npm run build && npx electron-builder -m --arm64 --publish never",
+    "pack-win-publish": "npm run build && npx electron-builder -w --x64 --publish never",
+    "release-all": "npm run pack-mac-x64-signed && npm run pack-mac-arm-signed && npm run pack-win",
+    "upload:assets": "bash -lc 'set -e; TAG=v$(jq -r .version package.json); RID=$(curl -s -H \"Accept: application/vnd.github+json\" -H \"Authorization: Bearer $GH_TOKEN\" https://api.github.com/repos/dengcb/WXRD/releases/tags/$TAG | jq -r .id); ASSETS=$(curl -s -H \"Accept: application/vnd.github+json\" -H \"Authorization: Bearer $GH_TOKEN\" https://api.github.com/repos/dengcb/WXRD/releases/$RID | jq -r \".assets[].name\"); for f in release/wxrd-${TAG#v}-arm64.dmg release/wxrd-${TAG#v}-x64.dmg release/wxrd-setup-${TAG#v}.exe; do if [ -f \"$f\" ]; then name=$(basename \"$f\"); if echo \"$ASSETS\" | grep -q \"^$name$\"; then echo \"SKIP $name exists\"; else mime=$(file -b --mime-type \"$f\"); curl -s -H \"Authorization: Bearer $GH_TOKEN\" -H \"Content-Type: $mime\" --data-binary @\"$f\" \"https://uploads.github.com/repos/dengcb/WXRD/releases/$RID/assets?name=$name\" > /dev/null; echo \"UPLOADED $name\"; fi; fi; done'",
+    "release:finalize": "bash -lc 'TAG=v$(jq -r .version package.json); RID=$(curl -s -H \"Accept: application/vnd.github+json\" -H \"Authorization: Bearer $GH_TOKEN\" https://api.github.com/repos/dengcb/WXRD/releases/tags/$TAG | jq -r .id); curl -s -X PATCH -H \"Accept: application/vnd.github+json\" -H \"Authorization: Bearer $GH_TOKEN\" https://api.github.com/repos/dengcb/WXRD/releases/$RID -d \"{\\\"draft\\\":false}\"'"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^3.6.0",
