@@ -14,7 +14,7 @@ Wechat Read Desktop is a minimal Wechat Read desktop client based on electron.js
 
 ## Install
 
-Installers can be found at [Release Page](https://github.com/estepona/wx-read-desktop/releases). Currently supporting Mac and Windows.
+Installers can be found at [Release Page](https://github.com/dengcb/WXRD/releases). Currently supporting Mac and Windows.
 
 ## Credit
 

@@ -1,5 +1,5 @@
 import * as dotenv from 'dotenv';
-import { app, BrowserWindow, BrowserView, Menu, shell, MenuItemConstructorOptions, nativeImage } from 'electron';
+import { app, BrowserWindow, BrowserView, Menu, shell, MenuItemConstructorOptions, nativeImage, screen } from 'electron';
 import * as path from 'path';
 
 dotenv.config();
@@ -31,17 +31,48 @@ async function setReaderWidthForState(win: BrowserWindow) {
   }
 }
 
-function updateReaderWideMenuEnabled(win: BrowserWindow) {
+function moveWindowToDisplay(win: BrowserWindow, d: Electron.Display) {
+  const area = d.workArea || d.bounds;
+  const wb = win.getBounds();
+  const width = Math.min(wb.width, area.width);
+  const height = Math.min(wb.height, area.height);
+  const x = area.x + Math.floor((area.width - width) / 2);
+  const y = area.y + Math.floor((area.height - height) / 2);
+  win.setBounds({ x, y, width, height }, true);
+  win.focus();
+  setCNMenu(win);
+}
+
+function fillWindowToCurrentDisplay(win: BrowserWindow) {
+  const wb = win.getBounds();
+  const d = screen.getDisplayMatching(wb);
+  const area = d.workArea || d.bounds;
+  const margin = 8;
+  const width = Math.max(100, area.width - margin * 2);
+  const height = Math.max(100, area.height - margin * 2);
+  const x = area.x + margin;
+  const y = area.y + margin;
+  if (win.isFullScreen()) win.setFullScreen(false);
+  win.setBounds({ x, y, width, height }, true);
+  win.focus();
+}
+
+function updateReaderWideMenuEnabled(win?: BrowserWindow) {
   const menu = Menu.getApplicationMenu();
   if (!menu) return;
   const item = menu.getMenuItemById(MENU_READER_WIDE_ID);
   if (!item) return;
+  if (!win || win.isDestroyed()) {
+    item.enabled = false;
+    return;
+  }
   const url = win.webContents.getURL();
   item.enabled = url.includes(READER_PATH);
 }
 
-function setCNMenu(mainWindow: BrowserWindow) {
+function setCNMenu(mainWindow: BrowserWindow | null) {
   const template: MenuItemConstructorOptions[] = [];
+  const hasWindow = !!mainWindow && !mainWindow.isDestroyed();
   if (isMac) {
     template.push({
       label: app.name,
@@ -81,25 +112,50 @@ function setCNMenu(mainWindow: BrowserWindow) {
   template.push({
     label: '视图',
     submenu: [
-      { label: '刷新', accelerator: 'CmdOrCtrl+R', click: () => mainWindow.webContents.reload() },
-      { label: '返回', accelerator: 'CmdOrCtrl+[', click: () => { if (mainWindow.webContents.canGoBack()) mainWindow.webContents.goBack(); } },
-      { label: '前进', accelerator: 'CmdOrCtrl+]', click: () => { if (mainWindow.webContents.canGoForward()) mainWindow.webContents.goForward(); } },
+      { label: '刷新', accelerator: 'CmdOrCtrl+R', enabled: hasWindow, click: () => { if (hasWindow) mainWindow!.webContents.reload(); } },
+      { label: '返回', accelerator: 'CmdOrCtrl+[', enabled: hasWindow, click: () => { if (hasWindow && mainWindow!.webContents.canGoBack()) mainWindow!.webContents.goBack(); } },
+      { label: '前进', accelerator: 'CmdOrCtrl+]', enabled: hasWindow, click: () => { if (hasWindow && mainWindow!.webContents.canGoForward()) mainWindow!.webContents.goForward(); } },
       { type: 'separator' },
-      { role: 'resetZoom', label: '实际大小', accelerator: 'CmdOrCtrl+0' },
-      { role: 'zoomIn', label: '放大', accelerator: 'CmdOrCtrl+=' },
-      { role: 'zoomOut', label: '缩小', accelerator: 'CmdOrCtrl+-' },
+      { role: 'resetZoom', label: '实际大小', accelerator: 'CmdOrCtrl+0', enabled: hasWindow },
+      { role: 'zoomIn', label: '放大', accelerator: 'CmdOrCtrl+=', enabled: hasWindow },
+      { role: 'zoomOut', label: '缩小', accelerator: 'CmdOrCtrl--', enabled: hasWindow },
       { type: 'separator' },
-      isMac ? { role: 'togglefullscreen', label: '切换全屏' } : { label: '切换全屏', accelerator: 'F11', click: () => { const isFull = mainWindow.isFullScreen(); mainWindow.setFullScreen(!isFull); } },
-      { id: MENU_READER_WIDE_ID, label: '阅读变宽', accelerator: 'CmdOrCtrl+9', enabled: false, click: async () => { readerWide = !readerWide; await setReaderWidthForState(mainWindow); } },
-      { label: '开发者工具', accelerator: 'Alt+CmdOrCtrl+I', click: () => mainWindow.webContents.toggleDevTools() },
+      isMac ? { role: 'togglefullscreen', label: '切换全屏', enabled: hasWindow } : { label: '切换全屏', accelerator: 'F11', enabled: hasWindow, click: () => { if (hasWindow) { const isFull = mainWindow!.isFullScreen(); mainWindow!.setFullScreen(!isFull); } } },
+      { id: MENU_READER_WIDE_ID, label: '阅读变宽', accelerator: 'CmdOrCtrl+9', enabled: false, click: async () => { if (!hasWindow) return; readerWide = !readerWide; await setReaderWidthForState(mainWindow!); } },
+      { label: '开发者工具', accelerator: 'Alt+CmdOrCtrl+I', enabled: hasWindow, click: () => { if (hasWindow) mainWindow!.webContents.toggleDevTools(); } },
     ],
   });
 
   template.push({
     label: '窗口',
     submenu: [
-      { role: 'minimize', label: '最小化' },
-      { role: 'close', label: '关闭' },
+      { role: 'minimize', label: '最小化', enabled: hasWindow },
+      isMac ? { role: 'zoom', label: '缩放', enabled: hasWindow } : { label: '缩放', enabled: hasWindow, click: () => { if (!hasWindow) return; mainWindow!.isMaximized() ? mainWindow!.unmaximize() : mainWindow!.maximize(); } },
+      { label: '填充', accelerator: 'CmdOrCtrl+Alt+F', enabled: hasWindow, click: () => { if (hasWindow) fillWindowToCurrentDisplay(mainWindow!); } },
+      ...(function () {
+        if (!hasWindow) return [] as MenuItemConstructorOptions[];
+        const displays = screen.getAllDisplays();
+        const current = screen.getDisplayMatching(mainWindow!.getBounds());
+        if (!displays || displays.length <= 1) return [] as MenuItemConstructorOptions[];
+        const items: MenuItemConstructorOptions[] = [];
+        for (let i = 0; i < displays.length; i++) {
+          const d = displays[i];
+          if (d.id === current.id) continue;
+          const name = (d as any).name || (d as any).label;
+          const title = name ? `移到 “${name}”` : `移到 显示器 ${i + 1}（${d.bounds.width}×${d.bounds.height}）`;
+          items.push({
+            label: title,
+            click: () => {
+              if (hasWindow) moveWindowToDisplay(mainWindow!, d);
+            },
+          });
+        }
+        if (items.length > 0) {
+          const sep: MenuItemConstructorOptions = { type: 'separator' as 'separator' };
+          return [sep, ...items];
+        }
+        return [] as MenuItemConstructorOptions[];
+      })(),
     ],
   });
 
@@ -149,6 +205,15 @@ const createWindow = () => {
     updateReaderWideMenuEnabled(mainWindow);
   });
 
+  screen.on('display-added', () => setCNMenu(mainWindow));
+  screen.on('display-removed', () => setCNMenu(mainWindow));
+  screen.on('display-metrics-changed', () => setCNMenu(mainWindow));
+
+  mainWindow.on('closed', () => {
+    setCNMenu(null);
+    updateReaderWideMenuEnabled(undefined);
+  });
+
   // Open the DevTools.
   process.env.NODE_ENV === 'dev' && mainWindow.webContents.openDevTools();
 };
@@ -182,6 +247,9 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
+  } else {
+    setCNMenu(null);
+    updateReaderWideMenuEnabled(undefined);
   }
 });
 

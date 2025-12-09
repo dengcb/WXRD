@@ -14,7 +14,7 @@
 
 ## 安装
 
-安装包可以在[Release 页面](https://github.com/estepona/wx-read-desktop/releases)找到，目前支持 Mac 以及 Windows 平台。
+安装包可以在[Release 页面](https://github.com/dengcb/WXRD/releases)找到，目前支持 Mac 以及 Windows 平台。
 
 ## 感谢
 

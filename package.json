@@ -16,6 +16,23 @@
     "appId": "com.electron.wx-read",
     "productName": "微信阅读",
     "copyright": "Copyright © 2025 - ${author}",
+    "compression": "maximum",
+    "electronLanguages": [
+      "zh-CN",
+      "en-US"
+    ],
+    "files": [
+      "tsout/**",
+      "asset/**",
+      "package.json",
+      "!src/**",
+      "!build/icons.iconset/**",
+      "!**/*.map",
+      "!**/node_modules/**/test/**",
+      "!**/node_modules/**/tests/**",
+      "!**/node_modules/**/example/**",
+      "!**/node_modules/**/examples/**"
+    ],
     "extraResources": [
       {
         "from": "build/mac-resources/zh_CN.lproj",
@@ -33,8 +50,21 @@
     "mac": {
       "category": "public.app-category.entertainment",
       "target": "dmg",
-      "icon": "build/app.icns"
-    }
+      "icon": "build/app.icns",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": {
+        "teamId": "${env.APPLE_TEAM_ID}"
+      }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "estepona",
+        "repo": "wx-read-desktop"
+      }
+    ]
   },
   "scripts": {
     "build": "tsc",
@@ -45,7 +75,8 @@
     "pack-win": "npm run build && npx electron-builder -w --x64",
     "pack-mac": "npm run gen:icns && npm run build && npx electron-builder -m --x64",
     "pack-mas": "npm run gen:icns && npm run build && npx electron-builder -m --arm64",
-    "pack-mac-arm": "npm run gen:icns && npm run build && npx electron-builder -m --arm64"
+    "pack-mac-arm": "npm run gen:icns && npm run build && npx electron-builder -m --arm64",
+    "pack-mac-arm-signed": "npm run gen:icns && npm run build && npx electron-builder -m --arm64 -p always"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^3.6.0",
