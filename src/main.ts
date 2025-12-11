@@ -1,6 +1,7 @@
 import * as dotenv from 'dotenv';
-import { app, BrowserWindow, BrowserView, Menu, shell, MenuItemConstructorOptions, nativeImage, screen } from 'electron';
+import { app, BrowserWindow, BrowserView, Menu, shell, MenuItemConstructorOptions, nativeImage, screen, powerSaveBlocker } from 'electron';
 import * as path from 'path';
+import * as fs from 'fs';
 
 dotenv.config();
 
@@ -8,14 +9,60 @@ const isMac = process.platform === 'darwin';
 
 const READER_PATH = '/web/reader/';
 const MENU_READER_WIDE_ID = 'menu-reader-wide';
+const MENU_HIDE_TOOLBAR_ID = 'menu-hide-toolbar';
+const MENU_AUTO_FLIP_ID = 'menu-auto-flip';
 const readerCss = `
   .readerTopBar,
   .readerChapterContent {
     width: 95% !important;
   }
 `;
+const toolbarHideCss = `
+  .readerControls {
+    display: none !important;
+  }
+  .readerTopBar,
+  .readerChapterContent {
+    max-width: calc(100vw - 124px) !important;
+  }
+`;
+const toolbarShowCss = `
+  .readerControls {
+    display: block !important;
+  }
+  .readerTopBar,
+  .readerChapterContent {
+    max-width: calc(100vw - 224px) !important;
+  }
+`;
 let readerWide = false;
+let hideToolbar = false;
+let autoFlip = false;
 let readerCssKey: string | null = null;
+let toolbarCssKey: string | null = null;
+let autoFlipTimer: ReturnType<typeof setInterval> | null = null;
+let autoFlipPsbId: number | null = null;
+let autoFlipSyntheticTick = 0;
+let autoFlipTickTimer: ReturnType<typeof setInterval> | null = null;
+let autoFlipCountdown = 30;
+let autoFlipOriginalTitle: string | null = null;
+let settingsPath: string | null = null;
+async function loadSettings() {
+  try {
+    settingsPath = path.join(app.getPath('userData'), 'wxrd-settings.json');
+    const txt = await fs.promises.readFile(settingsPath, 'utf8');
+    const obj = JSON.parse(txt);
+    readerWide = !!obj.readerWide;
+    hideToolbar = !!obj.hideToolbar;
+  } catch { }
+}
+async function saveSettings() {
+  try {
+    if (!settingsPath) settingsPath = path.join(app.getPath('userData'), 'wxrd-settings.json');
+    const txt = JSON.stringify({ readerWide, hideToolbar });
+    await fs.promises.writeFile(settingsPath, txt, 'utf8');
+  } catch { }
+}
 async function setReaderWidthForState(win: BrowserWindow) {
   const url = win.webContents.getURL();
   if (!url.includes(READER_PATH)) return;
@@ -28,6 +75,101 @@ async function setReaderWidthForState(win: BrowserWindow) {
   if (readerWide) {
     const key = await win.webContents.insertCSS(readerCss);
     readerCssKey = key;
+  }
+}
+// 判断当前窗口是否处于“阅读页”
+function isInReader(win: BrowserWindow) {
+  const url = win.webContents.getURL();
+  return url.includes(READER_PATH);
+}
+
+// 设置“自动翻页”标题初始值（同时备份原始标题）
+async function setAutoFlipTitleInitial(win: BrowserWindow) {
+  try {
+    if (autoFlipOriginalTitle == null) {
+      autoFlipOriginalTitle = await win.webContents.executeJavaScript('document.title');
+    }
+    await win.webContents.executeJavaScript(`document.title = "微信阅读 - 自动翻页 - ${autoFlipCountdown} 秒"`);
+  } catch { }
+}
+
+// 按当前倒计时数更新标题
+async function setAutoFlipTitle(win: BrowserWindow) {
+  try {
+    await win.webContents.executeJavaScript(`document.title = "微信阅读 - 自动翻页 - ${autoFlipCountdown} 秒"`);
+  } catch { }
+}
+
+// 恢复自动翻页前备份的标题（仅在阅读页，且明确停用时调用）
+async function restoreAutoFlipTitle(win: BrowserWindow) {
+  try {
+    if (autoFlipOriginalTitle != null && isInReader(win)) {
+      await win.webContents.executeJavaScript(`document.title = ${JSON.stringify(autoFlipOriginalTitle)}`);
+    }
+  } catch { }
+  autoFlipOriginalTitle = null;
+}
+
+// 触发阅读页布局刷新（模拟站点的刷新行为）
+async function refreshReaderArea(win: BrowserWindow) {
+  const url = win.webContents.getURL();
+  if (!url.includes(READER_PATH)) return;
+  try {
+    await win.webContents.executeJavaScript(`(function(){const f=t=>window.dispatchEvent(new Event(t));f('resize');f('orientationchange');var el=document.querySelector('.readerChapterContent');if(el){void el.offsetHeight;}})();`);
+  } catch { }
+}
+
+async function setToolbarForState(win: BrowserWindow) {
+  const url = win.webContents.getURL();
+  if (!url.includes(READER_PATH)) return;
+  if (toolbarCssKey) {
+    try {
+      await win.webContents.removeInsertedCSS(toolbarCssKey);
+    } catch { }
+    toolbarCssKey = null;
+  }
+  const css = hideToolbar ? toolbarHideCss : toolbarShowCss;
+  const key = await win.webContents.insertCSS(css);
+  toolbarCssKey = key;
+}
+
+function setAutoFlipForState(win: BrowserWindow) {
+  const inReader = isInReader(win);
+  const active = inReader && autoFlip;
+  if (autoFlipTimer) {
+    clearInterval(autoFlipTimer);
+    autoFlipTimer = null;
+  }
+  if (autoFlipTickTimer) {
+    clearInterval(autoFlipTickTimer);
+    autoFlipTickTimer = null;
+  }
+  if (active) {
+    try {
+      if (autoFlipPsbId === null || !powerSaveBlocker.isStarted(autoFlipPsbId)) {
+        autoFlipPsbId = powerSaveBlocker.start('prevent-app-suspension');
+      }
+    } catch { }
+    autoFlipCountdown = 30;
+    (async () => { await setAutoFlipTitleInitial(win); })();
+    autoFlipTickTimer = setInterval(async () => {
+      try {
+        autoFlipCountdown -= 1;
+        if (autoFlipCountdown <= 0) {
+          autoFlipSyntheticTick = Date.now();
+          win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Right' } as any);
+          win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Right' } as any);
+          autoFlipCountdown = 30;
+        }
+        await setAutoFlipTitle(win);
+      } catch { }
+    }, 1000);
+  } else {
+    if (autoFlipPsbId !== null) {
+      try { if (powerSaveBlocker.isStarted(autoFlipPsbId)) powerSaveBlocker.stop(autoFlipPsbId); } catch { }
+      autoFlipPsbId = null;
+    }
+    (async () => { await restoreAutoFlipTitle(win); })();
   }
 }
 
@@ -60,14 +202,39 @@ function fillWindowToCurrentDisplay(win: BrowserWindow) {
 function updateReaderWideMenuEnabled(win?: BrowserWindow) {
   const menu = Menu.getApplicationMenu();
   if (!menu) return;
-  const item = menu.getMenuItemById(MENU_READER_WIDE_ID);
-  if (!item) return;
-  if (!win || win.isDestroyed()) {
-    item.enabled = false;
-    return;
+  const wideItem = menu.getMenuItemById(MENU_READER_WIDE_ID);
+  const hideItem = menu.getMenuItemById(MENU_HIDE_TOOLBAR_ID);
+  const autoItem = menu.getMenuItemById(MENU_AUTO_FLIP_ID);
+  if (wideItem) {
+    if (!win || win.isDestroyed()) {
+      wideItem.enabled = false;
+      (wideItem as any).checked = false;
+    } else {
+      const inReader = win.webContents.getURL().includes(READER_PATH);
+      wideItem.enabled = inReader;
+      (wideItem as any).checked = inReader ? readerWide : false;
+    }
   }
-  const url = win.webContents.getURL();
-  item.enabled = url.includes(READER_PATH);
+  if (hideItem) {
+    if (!win || win.isDestroyed()) {
+      hideItem.enabled = false;
+      (hideItem as any).checked = false;
+    } else {
+      const inReader = win.webContents.getURL().includes(READER_PATH);
+      hideItem.enabled = inReader;
+      (hideItem as any).checked = inReader ? hideToolbar : false;
+    }
+  }
+  if (autoItem) {
+    if (!win || win.isDestroyed()) {
+      autoItem.enabled = false;
+      (autoItem as any).checked = false;
+    } else {
+      const inReader = win.webContents.getURL().includes(READER_PATH);
+      autoItem.enabled = inReader;
+      (autoItem as any).checked = inReader ? autoFlip : false;
+    }
+  }
 }
 
 function setCNMenu(mainWindow: BrowserWindow | null) {
@@ -115,13 +282,15 @@ function setCNMenu(mainWindow: BrowserWindow | null) {
       { label: '刷新', accelerator: 'CmdOrCtrl+R', enabled: hasWindow, click: () => { if (hasWindow) mainWindow!.webContents.reload(); } },
       { label: '返回', accelerator: 'CmdOrCtrl+[', enabled: hasWindow, click: () => { if (hasWindow && mainWindow!.webContents.canGoBack()) mainWindow!.webContents.goBack(); } },
       { label: '前进', accelerator: 'CmdOrCtrl+]', enabled: hasWindow, click: () => { if (hasWindow && mainWindow!.webContents.canGoForward()) mainWindow!.webContents.goForward(); } },
+      { id: MENU_AUTO_FLIP_ID, type: 'checkbox', label: '自动翻页', accelerator: 'CmdOrCtrl+I', enabled: false, checked: autoFlip, click: async (item) => { if (!hasWindow) return; autoFlip = (item as any).checked; setAutoFlipForState(mainWindow!); updateReaderWideMenuEnabled(mainWindow!); } },
       { type: 'separator' },
       { role: 'resetZoom', label: '实际大小', accelerator: 'CmdOrCtrl+0', enabled: hasWindow },
       { role: 'zoomIn', label: '放大', accelerator: 'CmdOrCtrl+=', enabled: hasWindow },
-      { role: 'zoomOut', label: '缩小', accelerator: 'CmdOrCtrl--', enabled: hasWindow },
+      { role: 'zoomOut', label: '缩小', accelerator: 'CmdOrCtrl+-', enabled: hasWindow },
       { type: 'separator' },
-      isMac ? { role: 'togglefullscreen', label: '切换全屏', enabled: hasWindow } : { label: '切换全屏', accelerator: 'F11', enabled: hasWindow, click: () => { if (hasWindow) { const isFull = mainWindow!.isFullScreen(); mainWindow!.setFullScreen(!isFull); } } },
-      { id: MENU_READER_WIDE_ID, label: '阅读变宽', accelerator: 'CmdOrCtrl+9', enabled: false, click: async () => { if (!hasWindow) return; readerWide = !readerWide; await setReaderWidthForState(mainWindow!); } },
+      isMac ? { role: 'togglefullscreen', label: '切换全屏', accelerator: 'Ctrl+Cmd+F', enabled: hasWindow } : { label: '切换全屏', accelerator: 'F11', enabled: hasWindow, click: () => { if (hasWindow) { const isFull = mainWindow!.isFullScreen(); mainWindow!.setFullScreen(!isFull); } } },
+      { id: MENU_READER_WIDE_ID, type: 'checkbox', label: '阅读变宽', accelerator: 'CmdOrCtrl+9', enabled: false, checked: readerWide, click: async (item) => { if (!hasWindow) return; readerWide = (item as any).checked; await setReaderWidthForState(mainWindow!); await refreshReaderArea(mainWindow!); await saveSettings(); updateReaderWideMenuEnabled(mainWindow!); } },
+      { id: MENU_HIDE_TOOLBAR_ID, type: 'checkbox', label: '隐藏工具栏', accelerator: 'CmdOrCtrl+O', enabled: false, checked: hideToolbar, click: async (item) => { if (!hasWindow) return; hideToolbar = (item as any).checked; await setToolbarForState(mainWindow!); await refreshReaderArea(mainWindow!); await saveSettings(); updateReaderWideMenuEnabled(mainWindow!); } },
       { label: '开发者工具', accelerator: 'Alt+CmdOrCtrl+I', enabled: hasWindow, click: () => { if (hasWindow) mainWindow!.webContents.toggleDevTools(); } },
     ],
   });
@@ -168,6 +337,7 @@ function setCNMenu(mainWindow: BrowserWindow | null) {
 
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
+  updateReaderWideMenuEnabled(mainWindow || undefined);
 }
 
 const createWindow = () => {
@@ -182,6 +352,7 @@ const createWindow = () => {
 
     webPreferences: {
       nodeIntegration: true,
+      backgroundThrottling: false,
     },
     icon: isMac ? (app.isPackaged ? path.join(process.resourcesPath, 'icon.icns') : path.join(__dirname, '../build/app.icns')) : path.join(__dirname, '../build/icon.png'),
   });
@@ -195,14 +366,36 @@ const createWindow = () => {
 
   mainWindow.webContents.on('did-finish-load', () => {
     setReaderWidthForState(mainWindow);
+    setToolbarForState(mainWindow);
+    refreshReaderArea(mainWindow);
+    setAutoFlipForState(mainWindow);
     updateReaderWideMenuEnabled(mainWindow);
   });
 
   mainWindow.webContents.on('did-navigate-in-page', (_e, url) => {
     if (url.includes(READER_PATH)) {
       setReaderWidthForState(mainWindow);
+      setToolbarForState(mainWindow);
+      refreshReaderArea(mainWindow);
+      setAutoFlipForState(mainWindow);
+    }
+    if (!url.includes(READER_PATH)) {
+      autoFlip = false;
+      if (autoFlipTimer) { clearInterval(autoFlipTimer); autoFlipTimer = null; }
+      if (autoFlipTickTimer) { clearInterval(autoFlipTickTimer); autoFlipTickTimer = null; }
+      autoFlipOriginalTitle = null;
     }
     updateReaderWideMenuEnabled(mainWindow);
+  });
+
+  mainWindow.webContents.on('before-input-event', (_event, input) => {
+    const key = (input as any).key || (input as any).code || '';
+    const isArrow = key === 'ArrowLeft' || key === 'ArrowRight' || key === 'ArrowUp' || key === 'ArrowDown' || key === 'Left' || key === 'Right' || key === 'Up' || key === 'Down';
+    if (!isArrow) return;
+    if (autoFlip && Date.now() - autoFlipSyntheticTick > 200) {
+      autoFlipCountdown = 30;
+      (async () => { try { await setAutoFlipTitle(mainWindow); } catch { } })();
+    }
   });
 
   screen.on('display-added', () => setCNMenu(mainWindow));
@@ -212,6 +405,9 @@ const createWindow = () => {
   mainWindow.on('closed', () => {
     setCNMenu(null);
     updateReaderWideMenuEnabled(undefined);
+    if (autoFlipTimer) { clearInterval(autoFlipTimer); autoFlipTimer = null; }
+    if (autoFlipTickTimer) { clearInterval(autoFlipTickTimer); autoFlipTickTimer = null; }
+    if (autoFlipPsbId !== null) { try { if (powerSaveBlocker.isStarted(autoFlipPsbId)) powerSaveBlocker.stop(autoFlipPsbId); } catch { } autoFlipPsbId = null; }
   });
 
   // Open the DevTools.
@@ -221,7 +417,8 @@ const createWindow = () => {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await loadSettings();
   if (isMac) {
     const iconPath = app.isPackaged ? path.join(process.resourcesPath, 'icon.icns') : path.join(__dirname, '../build/app.icns');
     const img = nativeImage.createFromPath(iconPath);
@@ -229,7 +426,7 @@ app.whenReady().then(() => {
     app.setAboutPanelOptions({
       applicationName: '微信阅读',
       applicationVersion: app.getVersion(),
-      copyright: 'Copyright © 2025 - Binghuan Zhang',
+      copyright: 'Copyright © 2025 - dengcb',
     });
   }
   createWindow();
