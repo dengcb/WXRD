@@ -71,12 +71,21 @@ export class ProfileManager {
         window._wxrdMouseListenerInited = true;
 
         try {
-          const { ipcRenderer } = require('electron');
+          // Changed to use contextBridge exposed API
+          // const { ipcRenderer } = require('electron'); 
+          const sendMouseMove = window.wxrd && window.wxrd.sendMouseMove;
+          
+          if (!sendMouseMove) {
+             console.error('WXRD: window.wxrd.sendMouseMove not found');
+             return;
+          }
+
           let lastTime = 0;
           function notify() {
             const now = Date.now();
             if (now - lastTime > 200) { // 200ms 节流
-              ipcRenderer.send('reader-mousemove');
+              // ipcRenderer.send('reader-mousemove');
+              sendMouseMove();
               lastTime = now;
             }
           }

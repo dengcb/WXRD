@@ -1,7 +1,7 @@
 {
   "name": "wxrd",
   "description": "A simple Electron application for Weixin Read",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "author": "dengcb <i@dengcb.com>",
   "repository": "https://github.com/dengcb/WXRD",
   "keywords": [
@@ -81,8 +81,8 @@
     "pack-mac-x64-signed": "npm run gen:icns && npm run build && npx electron-builder -m --x64 --publish never",
     "pack-mac-arm-signed": "npm run gen:icns && npm run build && npx electron-builder -m --arm64 --publish never",
     "pack-win-publish": "npm run build && npx electron-builder -w --x64 --publish never",
-    "release-all": "npm run pack-mac-x64-signed && npm run pack-mac-arm-signed && npm run pack-win",
-    "upload:assets": "bash -lc 'set -e; TAG=v$(jq -r .version package.json); RID=$(curl -s -H \"Accept: application/vnd.github+json\" -H \"Authorization: Bearer $GH_TOKEN\" https://api.github.com/repos/dengcb/WXRD/releases | jq -r \".[] | select(.tag_name==\\\"$TAG\\\") | .id\" | head -n 1); ASSETS=$(curl -s -H \"Accept: application/vnd.github+json\" -H \"Authorization: Bearer $GH_TOKEN\" https://api.github.com/repos/dengcb/WXRD/releases/$RID | jq -r \".assets[].name\"); for f in release/wxrd-${TAG#v}-arm64.dmg release/wxrd-${TAG#v}-x64.dmg release/wxrd-setup-${TAG#v}.exe; do if [ -f \"$f\" ]; then name=$(basename \"$f\"); if echo \"$ASSETS\" | grep -q \"^$name$\"; then echo \"SKIP $name exists\"; else mime=$(file -b --mime-type \"$f\"); curl -s -H \"Authorization: Bearer $GH_TOKEN\" -H \"Content-Type: $mime\" --data-binary @\"$f\" \"https://uploads.github.com/repos/dengcb/WXRD/releases/$RID/assets?name=$name\" > /dev/null; echo \"UPLOADED $name\"; fi; fi; done'",
+    "pack-all": "npm run pack-mac-x64-signed && npm run pack-mac-arm-signed && npm run pack-win",
+    "upload:assets": "./scripts/upload_assets.sh",
     "release:finalize": "bash -lc 'TAG=v$(jq -r .version package.json); RID=$(curl -s -H \"Accept: application/vnd.github+json\" -H \"Authorization: Bearer $GH_TOKEN\" https://api.github.com/repos/dengcb/WXRD/releases | jq -r \".[] | select(.tag_name==\\\"$TAG\\\") | .id\" | head -n 1); curl -s -X PATCH -H \"Accept: application/vnd.github+json\" -H \"Authorization: Bearer $GH_TOKEN\" https://api.github.com/repos/dengcb/WXRD/releases/$RID -d \"{\\\"draft\\\":false}\"'"
   },
   "devDependencies": {
