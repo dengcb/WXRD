@@ -117,7 +117,21 @@ export class MenuManager {
         {
           id: this.MENU_READER_WIDE_ID, type: 'checkbox', label: '阅读变宽', accelerator: 'CmdOrCtrl+9', enabled: false, checked: this.pagerManager?.readerWide || false, click: async (item) => {
             if (!hasWindow || !this.pagerManager) return;
-            this.pagerManager.readerWide = (item as any).checked;
+            const isChecked = (item as any).checked;
+
+            // 如果用户取消“阅读变宽”，且此时“隐藏工具栏”处于选中状态，则先取消“隐藏工具栏”
+            if (!isChecked && this.pagerManager.hideToolbar) {
+              this.pagerManager.hideToolbar = false;
+
+              // 显式更新菜单项状态：先取消勾选，再禁用（后续 updateReaderWideMenuEnabled 会处理禁用）
+              const menu = Menu.getApplicationMenu();
+              const hideItem = menu?.getMenuItemById(this.MENU_HIDE_TOOLBAR_ID);
+              if (hideItem) (hideItem as any).checked = false;
+
+              await this.pagerManager.setToolbarForState();
+            }
+
+            this.pagerManager.readerWide = isChecked;
             await this.pagerManager.setReaderWidthForState();
             await this.pagerManager.refreshReaderArea();
             await this.saveSettings();
@@ -207,7 +221,8 @@ export class MenuManager {
         (hideItem as any).checked = false;
       } else {
         const inReader = win.webContents.getURL().includes(this.READER_PATH);
-        hideItem.enabled = inReader;
+        // 只有当“阅读变宽”开启时，“隐藏工具栏”才可选
+        hideItem.enabled = inReader && this.pagerManager.readerWide;
         (hideItem as any).checked = inReader ? this.pagerManager.hideToolbar : false;
       }
     }

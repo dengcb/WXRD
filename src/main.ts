@@ -8,6 +8,11 @@ import { TurnerManager } from './turner_manager';
 import { ThemeManager } from './theme_manager';
 import { MenuManager } from './menu_manager';
 
+// 屏蔽 Electron 安全警告（控制台）
+// 因为我们需要加载第三方网页（微信读书），无法强制实施严格的 CSP（如禁止 unsafe-eval），
+// 且该警告仅在开发环境下显示，打包后会自动消失。
+process.env['ELECTRON_DISABLE_SECURITY_WARNINGS'] = 'true';
+
 dotenv.config();
 
 const isMac = process.platform === 'darwin';
@@ -24,6 +29,9 @@ let turnerManager: TurnerManager | null = null;
 let profileManager: ProfileManager | null = null;
 let themeManager: ThemeManager | null = null;
 let menuManager: MenuManager | null = null;
+
+// 标记是否是首次启动 APP
+let isAppFirstLaunch = true;
 
 async function loadSettings() {
   try {
@@ -209,13 +217,21 @@ const createWindow = async () => {
     icon: isMac ? (app.isPackaged ? path.join(process.resourcesPath, 'icon.icns') : path.join(__dirname, '../build/app.icns')) : path.join(__dirname, '../build/icon.png'),
   });
 
-  // Spoof User Agent to look like a regular Chrome browser
-  // This prevents the website from detecting Electron and serving incompatible code (hydration errors)
-  const originalUserAgent = mainWindow.webContents.getUserAgent();
-  const cleanUserAgent = originalUserAgent.replace(/Electron\/[0-9\.]+\s/, '').replace(/wx-read-desktop\/[0-9\.]+\s/, '');
-  mainWindow.webContents.setUserAgent(cleanUserAgent);
+  // 设置固定的 User Agent，确保完全模拟 Chrome 浏览器，避免被识别为 Electron
+  // 这有助于解决部分样式文件加载 404 或被拦截的问题
+  const userAgent = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+  mainWindow.webContents.setUserAgent(userAgent);
 
   mainWindow.setMenuBarVisibility(false);
+
+  mainWindow.webContents.setWindowOpenHandler((details) => {
+    // 允许打开传书页，但强制在当前窗口加载
+    if (details.url.includes('/web/upload')) {
+      mainWindow.loadURL(details.url);
+      return { action: 'deny' };
+    }
+    return { action: 'allow' };
+  });
 
   if (windowState.isMaximized) {
     // mainWindow.maximize(); // Handled by ProfileManager
@@ -229,6 +245,7 @@ const createWindow = async () => {
   pagerManager = new PagerManager(mainWindow);
   turnerManager = new TurnerManager(mainWindow);
   themeManager = new ThemeManager(mainWindow);
+
   menuManager = new MenuManager(createSettingsWindow, saveSettings);
   menuManager.setWindow(mainWindow);
   menuManager.setManagers(pagerManager, turnerManager);
@@ -256,11 +273,13 @@ const createWindow = async () => {
   }
 
   // Navigate based on populated state
-  if (turnerManager && turnerManager.rememberLastPage && turnerManager.lastReaderUrl) {
+  // 仅在 APP 首次启动时加载上次阅读进度，避免在窗口重载或重建时干扰
+  if (isAppFirstLaunch && turnerManager && turnerManager.rememberLastPage && turnerManager.lastReaderUrl) {
     mainWindow.loadURL(turnerManager.lastReaderUrl);
   } else {
     mainWindow.loadURL('https://weread.qq.com/');
   }
+  isAppFirstLaunch = false;
 
   // Apply initial state
   if (pagerManager) pagerManager.applyState();

@@ -1,4 +1,4 @@
-import { BrowserWindow, powerSaveBlocker } from 'electron';
+import { BrowserWindow, powerSaveBlocker, ipcMain } from 'electron';
 
 export class TurnerManager {
   private window: BrowserWindow;
@@ -20,6 +20,14 @@ export class TurnerManager {
 
   constructor(win: BrowserWindow) {
     this.window = win;
+    ipcMain.on('simulate-swipe-key', this.handleSwipeKey);
+  }
+
+  private handleSwipeKey = (event: Electron.IpcMainEvent, key: string) => {
+    if (!this.window || this.window.isDestroyed()) return;
+
+    this.window.webContents.sendInputEvent({ type: 'keyDown', keyCode: key });
+    this.window.webContents.sendInputEvent({ type: 'keyUp', keyCode: key });
   }
 
   private isInReader(): boolean {
@@ -60,6 +68,7 @@ export class TurnerManager {
     const inReader = this.isInReader();
     const active = inReader && this.autoFlip;
 
+    // 清理旧定时器（虽然现在逻辑移交了，但为了安全还是要清）
     if (this.autoFlipTimer) {
       clearInterval(this.autoFlipTimer);
       this.autoFlipTimer = null;
@@ -69,6 +78,7 @@ export class TurnerManager {
       this.autoFlipTickTimer = null;
     }
 
+    // 1. 处理防休眠逻辑 (Keep Awake)
     if (active) {
       try {
         if (this.keepAwake) {
@@ -76,55 +86,34 @@ export class TurnerManager {
             this.autoFlipPsbId = powerSaveBlocker.start('prevent-app-suspension');
           }
         } else {
+          // 如果用户关闭了 keepAwake，但 autoFlip 还在，则停止防休眠
           if (this.autoFlipPsbId !== null) {
             if (powerSaveBlocker.isStarted(this.autoFlipPsbId)) powerSaveBlocker.stop(this.autoFlipPsbId);
             this.autoFlipPsbId = null;
           }
         }
       } catch { }
-
-      this.autoFlipCountdown = this.autoFlipStep;
-      this.setAutoFlipTitleInitial();
-
-      this.autoFlipTickTimer = setInterval(async () => {
-        if (this.window.isDestroyed()) return;
-
-        // 如果未开启“后台不休”，且窗口不在前台（失去焦点），则暂停翻页逻辑
-        if (!this.keepAwake && !this.window.isFocused()) {
-          return;
-        }
-
-        try {
-          this.autoFlipCountdown -= 1;
-          if (this.autoFlipCountdown <= 0) {
-            this.autoFlipSyntheticTick = Date.now();
-            this.window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Right' } as any);
-            this.window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Right' } as any);
-            this.autoFlipCountdown = this.autoFlipStep;
-          }
-          await this.setAutoFlipTitle();
-        } catch { }
-      }, 1000);
     } else {
+      // 停止自动翻页，清理防休眠
       if (this.autoFlipPsbId !== null) {
         try { if (powerSaveBlocker.isStarted(this.autoFlipPsbId)) powerSaveBlocker.stop(this.autoFlipPsbId); } catch { }
         this.autoFlipPsbId = null;
       }
-      this.restoreAutoFlipTitle();
     }
+
+    // 2. 通知渲染进程 (Preload) 启动/停止自动翻页逻辑
+    // 将具体的定时器、滚动、按键模拟决策权下放给渲染进程，
+    // 以便其根据单栏/双栏模式智能切换策略。
+    this.window.webContents.send('auto-flip-status', {
+      active: active,
+      interval: this.autoFlipStep, // 秒
+      keepAwake: this.keepAwake
+    });
   }
 
   public handleInput(input: Electron.Input) {
-    // 监听键盘输入，如果是人工翻页（左右方向键），则重置倒计时
-    if (this.autoFlip && this.isInReader()) {
-      // 过滤掉我们自己模拟的按键
-      if (Date.now() - this.autoFlipSyntheticTick < 50) return;
-
-      if (input.type === 'keyDown' && (input.key === 'ArrowRight' || input.key === 'ArrowLeft' || input.key === ' ' || input.key === 'Enter')) {
-        this.autoFlipCountdown = this.autoFlipStep;
-        this.setAutoFlipTitle();
-      }
-    }
+    // 这里的重置逻辑也移交给渲染进程处理，主进程只负责转发输入事件（如果有必要）
+    // 目前不需要做任何事，渲染进程会监听 DOM 的 keydown 事件
   }
 
   public stop() {
@@ -152,5 +141,6 @@ export class TurnerManager {
     if (this.autoFlipPsbId !== null && powerSaveBlocker.isStarted(this.autoFlipPsbId)) {
       powerSaveBlocker.stop(this.autoFlipPsbId);
     }
+    ipcMain.removeListener('simulate-swipe-key', this.handleSwipeKey);
   }
 }
