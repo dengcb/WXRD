@@ -38,12 +38,38 @@ export class MenuManager {
     this.pagerManager = pager;
     this.turnerManager = turner;
     this.updateManager = update;
+
+    if (this.updateManager) {
+      this.updateManager.setOnStateChange(() => {
+        this.updateUpdateMenuItem();
+      });
+    }
   }
 
   public setCNMenu() {
     const mainWindow = this.mainWindow;
     const template: MenuItemConstructorOptions[] = [];
     const hasWindow = !!mainWindow && !mainWindow.isDestroyed();
+
+    // 根据当前 UpdateManager 状态计算初始 label 和 enabled
+    let updateLabel = '检查更新...';
+    let updateEnabled = true;
+    if (this.updateManager) {
+      switch (this.updateManager.state) {
+        case 'checking':
+          updateLabel = '正在检查更新...';
+          updateEnabled = false;
+          break;
+        case 'downloading':
+          updateLabel = '正在下载更新...';
+          updateEnabled = false;
+          break;
+        case 'downloaded':
+          updateLabel = '重启安装更新';
+          updateEnabled = true;
+          break;
+      }
+    }
 
     if (isMac) {
       template.push({
@@ -52,7 +78,8 @@ export class MenuManager {
           { role: 'about', label: '关于' },
           {
             id: this.MENU_UPDATE_ID,
-            label: '检查更新...',
+            label: updateLabel,
+            enabled: updateEnabled,
             click: () => {
               if (this.updateManager?.state === 'downloaded') {
                 this.updateManager.quitAndInstall();
@@ -216,29 +243,8 @@ export class MenuManager {
   }
 
   public updateUpdateMenuItem() {
-    const menu = Menu.getApplicationMenu();
-    if (!menu || !this.updateManager) return;
-    const item = menu.getMenuItemById(this.MENU_UPDATE_ID);
-    if (!item) return;
-
-    switch (this.updateManager.state) {
-      case 'idle':
-        item.label = '检查更新...';
-        item.enabled = true;
-        break;
-      case 'checking':
-        item.label = '正在检查更新...';
-        item.enabled = false;
-        break;
-      case 'downloading':
-        item.label = '正在下载更新...';
-        item.enabled = false;
-        break;
-      case 'downloaded':
-        item.label = '重启安装更新';
-        item.enabled = true;
-        break;
-    }
+    // 直接重建整个菜单，以避免 macOS 上修改现有菜单项属性可能导致的刷新不及时或不生效问题
+    this.setCNMenu();
   }
 
   public updateReaderWideMenuEnabled() {

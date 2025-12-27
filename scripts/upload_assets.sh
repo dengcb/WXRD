@@ -59,6 +59,8 @@ FILES=()
 # Installers
 FILES+=("release/wxrd-${VERSION}-arm64.dmg")
 FILES+=("release/wxrd-${VERSION}-x64.dmg")
+FILES+=("release/wxrd-${VERSION}-arm64.zip")
+FILES+=("release/wxrd-${VERSION}-x64.zip")
 FILES+=("release/wxrd-setup-${VERSION}.exe")
 
 # Blockmaps (Auto-update requirement)
@@ -68,6 +70,12 @@ if [ -f "release/wxrd-${VERSION}-arm64.dmg.blockmap" ]; then
 fi
 if [ -f "release/wxrd-${VERSION}-x64.dmg.blockmap" ]; then
   FILES+=("release/wxrd-${VERSION}-x64.dmg.blockmap")
+fi
+if [ -f "release/wxrd-${VERSION}-arm64.zip.blockmap" ]; then
+  FILES+=("release/wxrd-${VERSION}-arm64.zip.blockmap")
+fi
+if [ -f "release/wxrd-${VERSION}-x64.zip.blockmap" ]; then
+  FILES+=("release/wxrd-${VERSION}-x64.zip.blockmap")
 fi
 if [ -f "release/wxrd-setup-${VERSION}.exe.blockmap" ]; then
   FILES+=("release/wxrd-setup-${VERSION}.exe.blockmap")

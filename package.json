@@ -1,7 +1,7 @@
 {
   "name": "wxrd",
   "description": "A simple Electron application for Weixin Reader",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "author": "dengcb <i@dengcb.com>",
   "repository": "https://github.com/dengcb/WXRD",
   "keywords": [
@@ -49,7 +49,10 @@
     },
     "mac": {
       "category": "public.app-category.entertainment",
-      "target": "dmg",
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "icon": "build/app.icns",
       "artifactName": "wxrd-${version}-${arch}.${ext}",
       "hardenedRuntime": true,

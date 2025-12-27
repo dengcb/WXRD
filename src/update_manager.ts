@@ -9,7 +9,7 @@ export class UpdateManager {
   public state: 'idle' | 'checking' | 'downloading' | 'downloaded' = 'idle';
   public autoCheck = true; // Default to true
 
-  private onStateChangeCallback: (() => void) | null = null;
+  private listeners: (() => void)[] = [];
   private onSettingsChangeCallback: (() => Promise<void>) | null = null;
 
   constructor() {
@@ -21,7 +21,7 @@ export class UpdateManager {
   }
 
   public setOnStateChange(callback: () => void) {
-    this.onStateChangeCallback = callback;
+    this.listeners.push(callback);
   }
 
   public setOnSettingsChange(callback: () => Promise<void>) {
@@ -30,9 +30,7 @@ export class UpdateManager {
 
   private updateState(newState: 'idle' | 'checking' | 'downloading' | 'downloaded') {
     this.state = newState;
-    if (this.onStateChangeCallback) {
-      this.onStateChangeCallback();
-    }
+    this.listeners.forEach(listener => listener());
   }
 
   private setupListeners() {
