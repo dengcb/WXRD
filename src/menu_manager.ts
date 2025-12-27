@@ -1,6 +1,9 @@
-import { app, BrowserWindow, Menu, shell, MenuItemConstructorOptions, screen } from 'electron';
+import electron from 'electron';
+const { app, Menu, shell, screen } = electron;
+import type { BrowserWindow, MenuItemConstructorOptions } from 'electron';
 import { PagerManager } from './pager_manager';
 import { TurnerManager } from './turner_manager';
+import { UpdateManager } from './update_manager';
 
 const isMac = process.platform === 'darwin';
 
@@ -10,10 +13,12 @@ export class MenuManager {
   private readonly MENU_HIDE_TOOLBAR_ID = 'menu-hide-toolbar';
   private readonly MENU_AUTO_FLIP_ID = 'menu-auto-flip';
   private readonly MENU_FULL_SCREEN_ID = 'menu-full-screen';
+  private readonly MENU_UPDATE_ID = 'menu-update';
 
   private mainWindow: BrowserWindow | null = null;
   private pagerManager: PagerManager | null = null;
   private turnerManager: TurnerManager | null = null;
+  private updateManager: UpdateManager | null = null;
   private createSettingsWindow: () => void;
   private saveSettings: () => Promise<void>;
 
@@ -29,9 +34,10 @@ export class MenuManager {
     this.mainWindow = win;
   }
 
-  public setManagers(pager: PagerManager | null, turner: TurnerManager | null) {
+  public setManagers(pager: PagerManager | null, turner: TurnerManager | null, update: UpdateManager | null) {
     this.pagerManager = pager;
     this.turnerManager = turner;
+    this.updateManager = update;
   }
 
   public setCNMenu() {
@@ -44,6 +50,18 @@ export class MenuManager {
         label: app.name,
         submenu: [
           { role: 'about', label: '关于' },
+          {
+            id: this.MENU_UPDATE_ID,
+            label: '检查更新...',
+            click: () => {
+              if (this.updateManager?.state === 'downloaded') {
+                this.updateManager.quitAndInstall();
+              } else {
+                this.updateManager?.checkUpdate(true);
+              }
+            }
+          },
+          { type: 'separator' },
           {
             label: '设置…',
             accelerator: 'CmdOrCtrl+,',
@@ -195,6 +213,32 @@ export class MenuManager {
     const menu = Menu.buildFromTemplate(template);
     Menu.setApplicationMenu(menu);
     this.updateReaderWideMenuEnabled();
+  }
+
+  public updateUpdateMenuItem() {
+    const menu = Menu.getApplicationMenu();
+    if (!menu || !this.updateManager) return;
+    const item = menu.getMenuItemById(this.MENU_UPDATE_ID);
+    if (!item) return;
+
+    switch (this.updateManager.state) {
+      case 'idle':
+        item.label = '检查更新...';
+        item.enabled = true;
+        break;
+      case 'checking':
+        item.label = '正在检查更新...';
+        item.enabled = false;
+        break;
+      case 'downloading':
+        item.label = '正在下载更新...';
+        item.enabled = false;
+        break;
+      case 'downloaded':
+        item.label = '重启安装更新';
+        item.enabled = true;
+        break;
+    }
   }
 
   public updateReaderWideMenuEnabled() {

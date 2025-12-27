@@ -23,15 +23,9 @@ export class ProfileManager {
     this.window = win;
     this.boundUpdateVisibility = () => this.updateVisibility();
 
-    this.ipcHandler = (event) => {
-      // 确保消息来自当前窗口
-      const w = BrowserWindow.fromWebContents(event.sender);
-      if (w && w.id === this.window.id) {
-        this.updateVisibility();
-      }
-    };
+    // IPC Logic moved to IPCManager
+    this.ipcHandler = () => { };
 
-    ipcMain.on('reader-mousemove', this.ipcHandler);
     this.window.on('enter-full-screen', this.boundUpdateVisibility);
     this.window.on('leave-full-screen', this.boundUpdateVisibility);
   }
@@ -52,7 +46,7 @@ export class ProfileManager {
 
   public saveWindowState() {
     if (this.window.isDestroyed()) return;
-    
+
     const bounds = this.window.getBounds();
     this.windowState.x = bounds.x;
     this.windowState.y = bounds.y;
@@ -96,7 +90,7 @@ export class ProfileManager {
           console.error('WXRD: Failed to inject mouse listener', e);
         }
       })();
-    `).catch(() => {});
+    `).catch(() => { });
   }
 
   private isInReader(): boolean {
@@ -171,6 +165,5 @@ export class ProfileManager {
       clearTimeout(this.timer);
       this.timer = null;
     }
-    ipcMain.removeListener('reader-mousemove', this.ipcHandler);
   }
 }

@@ -1,7 +1,7 @@
 {
   "name": "wxrd",
   "description": "A simple Electron application for Weixin Reader",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "author": "dengcb <i@dengcb.com>",
   "repository": "https://github.com/dengcb/WXRD",
   "keywords": [
@@ -53,6 +53,7 @@
       "icon": "build/app.icns",
       "artifactName": "wxrd-${version}-${arch}.${ext}",
       "hardenedRuntime": true,
+      "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "notarize": null
@@ -70,25 +71,29 @@
     ]
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
     "watch": "tsc -w",
     "lint": "bunx eslint src/",
+    "test": "bun test --preload src/__tests__/setup.ts",
     "start": "bun run build && electron ./tsout/main.js",
     "gen:icns": "bash -c 'ICON_SRC=asset/app.png; ICONSET=build/icons.iconset; mkdir -p \"$ICONSET\" && sips -z 16 16 \"$ICON_SRC\" --out \"$ICONSET/icon_16x16.png\" && sips -z 32 32 \"$ICON_SRC\" --out \"$ICONSET/icon_16x16@2x.png\" && sips -z 32 32 \"$ICON_SRC\" --out \"$ICONSET/icon_32x32.png\" && sips -z 64 64 \"$ICON_SRC\" --out \"$ICONSET/icon_32x32@2x.png\" && sips -z 128 128 \"$ICON_SRC\" --out \"$ICONSET/icon_128x128.png\" && sips -z 256 256 \"$ICON_SRC\" --out \"$ICONSET/icon_128x128@2x.png\" && sips -z 256 256 \"$ICON_SRC\" --out \"$ICONSET/icon_256x256.png\" && sips -z 512 512 \"$ICON_SRC\" --out \"$ICONSET/icon_256x256@2x.png\" && sips -z 512 512 \"$ICON_SRC\" --out \"$ICONSET/icon_512x512.png\" && sips -z 1024 1024 \"$ICON_SRC\" --out \"$ICONSET/icon_512x512@2x.png\" && iconutil -c icns \"$ICONSET\" -o build/app.icns && cp \"$ICON_SRC\" build/icon.png'",
     "pack-win": "bun run build && bunx electron-builder -w --x64",
-    "pack-mac": "bun run gen:icns && bun run build && bunx electron-builder -m --x64",
+    "pack-mac-x64": "bun run gen:icns && bun run build && bunx electron-builder -m --x64",
     "pack-mac-arm": "bun run gen:icns && bun run build && bunx electron-builder -m --arm64",
     "pack-mac-x64-signed": "bun run gen:icns && bun run build && bunx electron-builder -m --x64 --publish never",
     "pack-mac-arm-signed": "bun run gen:icns && bun run build && bunx electron-builder -m --arm64 --publish never",
-    "pack-win-publish": "bun run build && bunx electron-builder -w --x64 --publish never",
-    "pack-all": "bun run pack-mac-x64-signed && bun run pack-mac-arm-signed && bun run pack-win",
+    "pack-mac-signed": "bun run gen:icns && bun run build && bunx electron-builder -m --x64 --arm64 --publish never",
+    "pack-win-unpublish": "bun run build && bunx electron-builder -w --x64 --publish never",
+    "pack-all": "bun run pack-mac-signed && bun run pack-win-unpublish",
     "upload:assets": "./scripts/upload_assets.sh",
     "release:finalize": "bash -lc 'TAG=v$(jq -r .version package.json); RID=$(curl -s -H \"Accept: application/vnd.github+json\" -H \"Authorization: Bearer $GH_TOKEN\" https://api.github.com/repos/dengcb/WXRD/releases | jq -r \".[] | select(.tag_name==\\\"$TAG\\\") | .id\" | head -n 1); curl -s -X PATCH -H \"Accept: application/vnd.github+json\" -H \"Authorization: Bearer $GH_TOKEN\" https://api.github.com/repos/dengcb/WXRD/releases/$RID -d \"{\\\"draft\\\":false}\"'"
   },
   "devDependencies": {
+    "@types/semver": "^7.7.1",
     "@typescript-eslint/eslint-plugin": "^3.6.0",
     "@typescript-eslint/parser": "^3.6.0",
     "ansi-regex": ">=5.0.1",
+    "bun-types": "^1.3.5",
     "electron": "^22.0.3",
     "electron-builder": "^25.0.5",
     "eslint": "^7.4.0",
@@ -99,6 +104,7 @@
     "typescript": "^3.9.5"
   },
   "dependencies": {
-    "dotenv": "^16.0.1"
+    "dotenv": "^16.0.1",
+    "electron-updater": "^6.6.2"
   }
 }

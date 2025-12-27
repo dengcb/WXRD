@@ -1,4 +1,6 @@
-import { BrowserWindow, powerSaveBlocker, ipcMain } from 'electron';
+import electron from 'electron';
+const { powerSaveBlocker, ipcMain } = electron;
+import type { BrowserWindow } from 'electron';
 
 export class TurnerManager {
   private window: BrowserWindow;
@@ -20,10 +22,9 @@ export class TurnerManager {
 
   constructor(win: BrowserWindow) {
     this.window = win;
-    ipcMain.on('simulate-swipe-key', this.handleSwipeKey);
   }
 
-  private handleSwipeKey = (event: Electron.IpcMainEvent, key: string) => {
+  public handleSwipeKey = (event: Electron.IpcMainEvent, key: string) => {
     if (!this.window || this.window.isDestroyed()) return;
 
     this.window.webContents.sendInputEvent({ type: 'keyDown', keyCode: key });
@@ -141,6 +142,5 @@ export class TurnerManager {
     if (this.autoFlipPsbId !== null && powerSaveBlocker.isStarted(this.autoFlipPsbId)) {
       powerSaveBlocker.stop(this.autoFlipPsbId);
     }
-    ipcMain.removeListener('simulate-swipe-key', this.handleSwipeKey);
   }
 }

@@ -1,14 +1,26 @@
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
 
 export class PagerManager {
   private window: BrowserWindow;
   private readonly READER_PATH = '/web/reader/';
-  
+
   public readerWide = false;
   public hideToolbar = false;
 
   constructor(win: BrowserWindow) {
     this.window = win;
+  }
+
+  public restoreSettings(settings: any) {
+    if (settings.readerWide !== undefined) this.readerWide = !!settings.readerWide;
+    if (settings.hideToolbar !== undefined) this.hideToolbar = !!settings.hideToolbar;
+  }
+
+  public getSettings() {
+    return {
+      readerWide: this.readerWide,
+      hideToolbar: this.hideToolbar
+    };
   }
 
   private isInReader(): boolean {
@@ -44,13 +56,16 @@ export class PagerManager {
     // preload 是每个页面加载都会执行的。
     // 所以，其实 applyState 在 did-finish-load 时调用，可能是多余的，但无害。
     // 重要的是在运行时（菜单点击）调用 setReaderWidthForState 等方法时，能通过 IPC 通知到 preload。
-    
+
     if (this.window.isDestroyed()) return;
     if (!this.isInReader()) return;
-    
-    this.window.webContents.send('update-reading-style', { 
+
+    this.window.webContents.send('update-reading-style', {
       readerWide: this.readerWide,
-      hideToolbar: this.hideToolbar 
+      hideToolbar: this.hideToolbar
     });
+  }
+
+  public dispose() {
   }
 }

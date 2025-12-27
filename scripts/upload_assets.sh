@@ -13,8 +13,6 @@ TAG="v$VERSION"
 echo "Processing release for tag: $TAG"
 
 # 2. Find Release ID
-# We look for the release by tag using the specific API endpoint.
-# If the release doesn't exist (even if the git tag does), this returns 404.
 RID=$(curl -s -H "Accept: application/vnd.github+json" \
            -H "Authorization: Bearer $GH_TOKEN" \
            "https://api.github.com/repos/dengcb/WXRD/releases/tags/$TAG" \
@@ -24,7 +22,6 @@ RID=$(curl -s -H "Accept: application/vnd.github+json" \
 if [ "$RID" = "null" ] || [ -z "$RID" ]; then
   echo "Release $TAG not found. Creating draft release..."
   
-  # Construct JSON payload
   PAYLOAD=$(jq -n --arg tag "$TAG" --arg name "$TAG" \
     '{tag_name: $tag, name: $name, body: ("Release " + $tag), draft: true, prerelease: false}')
   
@@ -47,21 +44,44 @@ else
 fi
 
 # 4. Get existing assets
-# Fetch the specific release to list assets
 ASSETS_JSON=$(curl -s -H "Accept: application/vnd.github+json" \
               -H "Authorization: Bearer $GH_TOKEN" \
               "https://api.github.com/repos/dengcb/WXRD/releases/$RID")
 
-# Check if we got a valid release object
 if [ "$(echo "$ASSETS_JSON" | jq -r .id)" = "null" ]; then
     echo "Error: Failed to fetch release details for ID $RID"
     exit 1
 fi
 
-# 5. Upload files
-# Note: Filenames match the pattern in package.json: wxrd-${VERSION}-...
-FILES=("release/wxrd-${VERSION}-arm64.dmg" "release/wxrd-${VERSION}-x64.dmg" "release/wxrd-setup-${VERSION}.exe")
+# 5. Collect files to upload
+FILES=()
 
+# Installers
+FILES+=("release/wxrd-${VERSION}-arm64.dmg")
+FILES+=("release/wxrd-${VERSION}-x64.dmg")
+FILES+=("release/wxrd-setup-${VERSION}.exe")
+
+# Blockmaps (Auto-update requirement)
+# Check for blockmaps corresponding to the installers
+if [ -f "release/wxrd-${VERSION}-arm64.dmg.blockmap" ]; then
+  FILES+=("release/wxrd-${VERSION}-arm64.dmg.blockmap")
+fi
+if [ -f "release/wxrd-${VERSION}-x64.dmg.blockmap" ]; then
+  FILES+=("release/wxrd-${VERSION}-x64.dmg.blockmap")
+fi
+if [ -f "release/wxrd-setup-${VERSION}.exe.blockmap" ]; then
+  FILES+=("release/wxrd-setup-${VERSION}.exe.blockmap")
+fi
+
+# YAML indexes (Auto-update requirement)
+if [ -f "release/latest.yml" ]; then
+  FILES+=("release/latest.yml")
+fi
+if [ -f "release/latest-mac.yml" ]; then
+  FILES+=("release/latest-mac.yml")
+fi
+
+# 6. Upload loop
 for f in "${FILES[@]}"; do
   if [ -f "$f" ]; then
     name=$(basename "$f")

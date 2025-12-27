@@ -7,6 +7,8 @@ import { PagerManager } from './pager_manager';
 import { TurnerManager } from './turner_manager';
 import { ThemeManager } from './theme_manager';
 import { MenuManager } from './menu_manager';
+import { UpdateManager } from './update_manager';
+import { IPCManager } from './ipc_manager';
 
 // 屏蔽 Electron 安全警告（控制台）
 // 因为我们需要加载第三方网页（微信读书），无法强制实施严格的 CSP（如禁止 unsafe-eval），
@@ -29,6 +31,8 @@ let turnerManager: TurnerManager | null = null;
 let profileManager: ProfileManager | null = null;
 let themeManager: ThemeManager | null = null;
 let menuManager: MenuManager | null = null;
+let updateManager: UpdateManager | null = null;
+let ipcManager: IPCManager | null = null;
 
 // 标记是否是首次启动 APP
 let isAppFirstLaunch = true;
@@ -44,8 +48,7 @@ async function loadSettings() {
     }
 
     if (pagerManager) {
-      pagerManager.readerWide = !!obj.readerWide;
-      pagerManager.hideToolbar = !!obj.hideToolbar;
+      pagerManager.restoreSettings(obj);
     }
     if (turnerManager) {
       if (obj.autoFlipStep) turnerManager.autoFlipStep = parseInt(obj.autoFlipStep, 10);
@@ -55,6 +58,9 @@ async function loadSettings() {
       if (turnerManager.rememberLastPage && obj.lastReaderUrl) {
         turnerManager.lastReaderUrl = obj.lastReaderUrl;
       }
+    }
+    if (updateManager) {
+      if (obj.autoCheckUpdate !== undefined) updateManager.autoCheck = !!obj.autoCheckUpdate;
     }
     return obj;
   } catch {
@@ -72,8 +78,7 @@ async function saveSettings() {
       obj.windowState = windowState;
     }
     if (pagerManager) {
-      obj.readerWide = pagerManager.readerWide;
-      obj.hideToolbar = pagerManager.hideToolbar;
+      Object.assign(obj, pagerManager.getSettings());
     }
     if (turnerManager) {
       obj.autoFlipStep = turnerManager.autoFlipStep;
@@ -82,6 +87,9 @@ async function saveSettings() {
       if (turnerManager.rememberLastPage && turnerManager.lastReaderUrl) {
         obj.lastReaderUrl = turnerManager.lastReaderUrl;
       }
+    }
+    if (updateManager) {
+      obj.autoCheckUpdate = updateManager.autoCheck;
     }
 
     const txt = JSON.stringify(obj);
@@ -120,62 +128,6 @@ function createSettingsWindow() {
     settingsWindow.webContents.openDevTools();
   }
 }
-
-ipcMain.on('get-settings', (event) => {
-  const data: any = {
-    autoFlipStep: 30,
-    keepAwake: true,
-    rememberLastPage: true
-  };
-
-  if (turnerManager) {
-    data.autoFlipStep = turnerManager.autoFlipStep;
-    data.keepAwake = turnerManager.keepAwake;
-    data.rememberLastPage = turnerManager.rememberLastPage;
-  }
-
-  event.sender.send('send-settings', data);
-});
-
-ipcMain.on('get-reading-settings-sync', (event) => {
-  event.returnValue = {
-    readerWide: pagerManager ? pagerManager.readerWide : false,
-    hideToolbar: pagerManager ? pagerManager.hideToolbar : false
-  };
-});
-
-ipcMain.on('update-settings', async (event, args) => {
-  let changed = false;
-  if (turnerManager) {
-    if (args.autoFlipStep) {
-      turnerManager.autoFlipStep = args.autoFlipStep;
-      changed = true;
-    }
-    if (args.keepAwake !== undefined) {
-      turnerManager.keepAwake = args.keepAwake;
-      changed = true;
-    }
-    if (args.rememberLastPage !== undefined) {
-      turnerManager.rememberLastPage = args.rememberLastPage;
-      if (!turnerManager.rememberLastPage) {
-        turnerManager.lastReaderUrl = null;
-      }
-      changed = true;
-    }
-  }
-
-  if (changed) {
-    await saveSettings();
-    // 如果正在自动翻页，需要实时更新状态
-    const wins = BrowserWindow.getAllWindows();
-    for (const win of wins) {
-      if (win !== settingsWindow && isInReader(win)) {
-        if (turnerManager) turnerManager.setAutoFlipForState();
-      }
-    }
-    menuManager?.updateReaderWideMenuEnabled();
-  }
-});
 
 // Menu functions removed - logic moved to MenuManager
 
@@ -245,10 +197,42 @@ const createWindow = async () => {
   pagerManager = new PagerManager(mainWindow);
   turnerManager = new TurnerManager(mainWindow);
   themeManager = new ThemeManager(mainWindow);
+  updateManager = new UpdateManager();
+
+  // Initialize IPC Manager
+  ipcManager = new IPCManager(
+    mainWindow,
+    pagerManager,
+    turnerManager,
+    profileManager,
+    null, // menuManager not created yet
+    saveSettings
+  );
+  ipcManager.registerListeners();
+
+  // Wire up callbacks
+  updateManager.setOnStateChange(() => {
+    menuManager?.updateUpdateMenuItem();
+  });
+  updateManager.setOnSettingsChange(async () => {
+    await saveSettings();
+  });
+
+  // Check for updates quietly on startup
+  // We do this AFTER loading settings in createWindow, but wait...
+  // createWindow calls loadSettings. updateManager is created in createWindow.
+  // BUT we need to call checkUpdate AFTER settings are loaded to respect autoCheck preference.
+  // In createWindow(), loadSettings() is called at the start. Then updateManager is created.
+  // Then we manually populate managers.
+  // So by the time we call checkUpdate below, autoCheck should be set correctly IF we populate it.
 
   menuManager = new MenuManager(createSettingsWindow, saveSettings);
   menuManager.setWindow(mainWindow);
-  menuManager.setManagers(pagerManager, turnerManager);
+  menuManager.setManagers(pagerManager, turnerManager, updateManager);
+
+  if (ipcManager) {
+    ipcManager.updateMenuManager(menuManager);
+  }
 
   // Restore window state
   if (profileManager) {
@@ -270,6 +254,14 @@ const createWindow = async () => {
         turnerManager.lastReaderUrl = settings.lastReaderUrl;
       }
     }
+    if (updateManager) {
+      if (settings.autoCheckUpdate !== undefined) updateManager.autoCheck = !!settings.autoCheckUpdate;
+    }
+  }
+
+  // Check update after settings are loaded
+  if (updateManager) {
+    updateManager.checkUpdate(false);
   }
 
   // Navigate based on populated state
@@ -352,7 +344,11 @@ const createWindow = async () => {
       menuManager.updateReaderWideMenuEnabled();
     }
     if (profileManager) profileManager.dispose();
+    if (pagerManager) {
+      pagerManager.dispose();
+    }
     if (turnerManager) turnerManager.dispose();
+    if (ipcManager) ipcManager.dispose();
   });
 
   mainWindow.on('enter-full-screen', () => {
